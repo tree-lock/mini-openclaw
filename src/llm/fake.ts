@@ -17,4 +17,16 @@ export class FakeLlm implements LlmClient {
 			trimmed.length > max ? `${trimmed.slice(0, max)}...` : trimmed;
 		return `summary: ${snippet}`;
 	}
+
+	async summarizeMerge(
+		existingMemory: string,
+		newSessionText: string,
+	): Promise<string> {
+		const existing = existingMemory.trim();
+		const newSnippet = newSessionText.trim().slice(0, 32);
+		const part =
+			newSessionText.trim().length > 32 ? `${newSnippet}...` : newSnippet;
+		if (existing) return `summary: [merged] ${part}`;
+		return `summary: ${part || "<empty>"}`;
+	}
 }

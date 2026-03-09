@@ -9,6 +9,15 @@ import type { ChatMessage } from "../llm/types";
 import { MemoryService } from "../memory/memoryService";
 import { Storage } from "../storage/storage";
 
+/**
+ * Clears chat history and long-term memory files. Used by /clear and tests.
+ */
+export async function clearSessionData(storage: Storage): Promise<void> {
+	await storage.ensureInitialized();
+	await storage.writeText(storage.paths.chatMd, "");
+	await storage.writeText(storage.paths.memoryMd, "");
+}
+
 function createRl() {
 	return readline.createInterface({
 		input: process.stdin,
@@ -76,7 +85,7 @@ export async function runChatSession(): Promise<void> {
 	// eslint-disable-next-line no-console
 	console.log(
 		chalk.cyan(
-			"Enter chat mode. Type /exit to quit, /summarize to summarize current session.",
+			"Enter chat mode. Type /exit to quit, /summarize to summarize current session, /clear to clear all history and memory.",
 		),
 	);
 
@@ -90,6 +99,36 @@ export async function runChatSession(): Promise<void> {
 			const input = (await askLine(rl, chalk.green("> "))).trim();
 
 			if (input === "") continue;
+
+			if (input === "/clear") {
+				// eslint-disable-next-line no-console
+				console.log(
+					chalk.yellow(
+						"此操作将删除所有历史对话与长期记忆（chat.md 与 memory.md），且不可恢复。",
+					),
+				);
+				// eslint-disable-next-line no-await-in-loop
+				const confirm = await askLine(
+					rl,
+					chalk.yellow(
+						"确认清空所有历史与记忆？输入 yes 继续，其他任意输入取消。\n> ",
+					),
+				);
+				const confirmed =
+					confirm.trim().toLowerCase() === "yes" ||
+					confirm.trim().toLowerCase() === "y";
+				if (confirmed) {
+					await clearSessionData(storage);
+					sessionLines.length = 0;
+					messages.length = 0;
+					// eslint-disable-next-line no-console
+					console.log(chalk.cyan("已清空历史与记忆，当前对话从零开始。"));
+				} else {
+					// eslint-disable-next-line no-console
+					console.log(chalk.gray("已取消清空操作。"));
+				}
+				continue;
+			}
 
 			if (input === "/exit") {
 				if (sessionLines.length > 0) {
@@ -118,11 +157,49 @@ export async function runChatSession(): Promise<void> {
 			sessionLines.push(`User: ${input}`);
 			messages.push({ role: "user", content: input });
 
+			const spinnerFrames = ["⠋", "⠙", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+			let spinnerActive = true;
+			let spinnerInterval: ReturnType<typeof setInterval> | null = null;
+			process.stdout.write(chalk.gray("Thinking "));
+			let frameIndex = 0;
+			spinnerInterval = setInterval(() => {
+				if (!spinnerActive) return;
+				const frame = spinnerFrames[frameIndex % spinnerFrames.length];
+				frameIndex += 1;
+				process.stdout.write(`\r${chalk.gray(`Thinking ${frame}`)}`);
+			}, 80);
+
 			const onChunk = (chunk: string) => {
+				if (spinnerActive) {
+					spinnerActive = false;
+					if (spinnerInterval) {
+						clearInterval(spinnerInterval);
+						spinnerInterval = null;
+					}
+					process.stdout.write(`\r${" ".repeat(16)}\r\n`);
+				}
 				process.stdout.write(chalk.blue(chunk));
 			};
-			// eslint-disable-next-line no-await-in-loop
-			const reply = await llm.generateReply(messages, onChunk);
+
+			let reply: string;
+			try {
+				// eslint-disable-next-line no-await-in-loop
+				reply = await llm.generateReply(messages, onChunk);
+			} catch (err) {
+				if (spinnerActive && spinnerInterval) {
+					clearInterval(spinnerInterval);
+					process.stdout.write(`\r${" ".repeat(16)}\r\n`);
+				}
+				const msg = err instanceof Error ? err.message : String(err);
+				// eslint-disable-next-line no-console
+				console.error(chalk.red(`请求失败: ${msg}，请稍后重试。`));
+				sessionLines.pop();
+				messages.pop();
+				continue;
+			} finally {
+				if (spinnerInterval) clearInterval(spinnerInterval);
+				spinnerActive = false;
+			}
 			process.stdout.write("\n");
 			sessionLines.push(`Assistant: ${reply}`);
 			messages.push({ role: "assistant", content: reply });

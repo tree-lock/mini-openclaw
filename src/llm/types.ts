@@ -15,4 +15,11 @@ export interface LlmClient {
 		onChunk?: (chunk: string) => void,
 	): Promise<string>;
 	summarize(text: string): Promise<string>;
+	/**
+	 * Merge existing long-term memory with new session text into an updated summary.
+	 */
+	summarizeMerge(
+		existingMemory: string,
+		newSessionText: string,
+	): Promise<string>;
 }

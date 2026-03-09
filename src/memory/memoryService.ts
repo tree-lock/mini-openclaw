@@ -15,7 +15,8 @@ export class MemoryService {
 
 	async summarizeSessionAndSave(text: string): Promise<string> {
 		await this.storage.ensureInitialized();
-		const summary = await this.llm.summarize(text);
+		const existing = await this.storage.readText(this.storage.paths.memoryMd);
+		const summary = await this.llm.summarizeMerge(existing, text);
 		const now = new Date().toISOString();
 		const md = `# Conversation Memory\n\n_Last updated: ${now}_\n\n${summary}\n`;
 		await this.storage.writeText(this.storage.paths.memoryMd, md);

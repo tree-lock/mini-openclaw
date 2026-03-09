@@ -86,4 +86,23 @@ export class OpenAiLlm implements LlmClient {
 		if (!content) return "";
 		return content;
 	}
+
+	async summarizeMerge(
+		existingMemory: string,
+		newSessionText: string,
+	): Promise<string> {
+		const systemPrompt =
+			"你是一个擅长中文总结的助手。下面会给出两部分内容：一、现有的长期记忆摘要（可能含标题与更新时间）；二、本轮完整对话文本。请生成一份新的长期记忆摘要（Markdown），保留仍然有效的旧信息，并加入本轮对话中的稳定事实，避免重复，保持简洁。";
+		const userContent = `## 现有长期记忆\n\n${existingMemory.trim() || "（无）"}\n\n## 本轮对话\n\n${newSessionText}`;
+		const completion = await this.client.chat.completions.create({
+			model: this.summarizeModel,
+			messages: [
+				{ role: "system", content: systemPrompt },
+				{ role: "user", content: userContent },
+			],
+		});
+		const content = completion.choices[0]?.message?.content;
+		if (!content) return "";
+		return content;
+	}
 }
