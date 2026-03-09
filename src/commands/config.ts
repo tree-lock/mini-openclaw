@@ -141,15 +141,12 @@ export async function runConfigListCommand(): Promise<void> {
 	const entries = await manager.listEntries();
 
 	if (entries.length === 0) {
-		// eslint-disable-next-line no-console
 		console.log(chalk.yellow("No configuration found."));
 		return;
 	}
 
-	// eslint-disable-next-line no-console
 	console.log(chalk.cyan("Current configuration (masked):"));
 	for (const entry of entries) {
-		// eslint-disable-next-line no-console
 		console.log(`- ${chalk.white(entry.key)} = ${chalk.gray(entry.masked)}`);
 	}
 }

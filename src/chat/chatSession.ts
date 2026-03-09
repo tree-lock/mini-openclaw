@@ -2,12 +2,16 @@ import readline from "node:readline";
 
 import chalk from "chalk";
 
+import { runCommand } from "../command-exec";
 import { ConfigManager } from "../config/configManager";
 import { CONFIG_KEYS } from "../config/schema";
 import { OpenAiLlm } from "../llm/openaiAdapter";
-import type { ChatMessage } from "../llm/types";
+import type { CompletionMessage } from "../llm/types";
 import { MemoryService } from "../memory/memoryService";
 import { Storage } from "../storage/storage";
+import { toErrorMessage } from "../utils/errorMessage";
+
+const MAX_TOOL_ROUNDS = 3;
 
 /**
  * Clears chat history and long-term memory files. Used by /clear and tests.
@@ -45,7 +49,6 @@ export async function runChatSession(): Promise<void> {
 	const modelName = config[CONFIG_KEYS.OPENAI_MODEL_NAME]?.trim();
 
 	if (!apiKey || apiKey.trim() === "") {
-		// eslint-disable-next-line no-console
 		console.error(
 			chalk.red(
 				"OPENAI_API_KEY is not configured. Please run `tclaw config` to set it before chatting.",
@@ -66,15 +69,13 @@ export async function runChatSession(): Promise<void> {
 
 	const history = await storage.readText(storage.paths.chatMd);
 	if (history.trim()) {
-		// eslint-disable-next-line no-console
 		console.log(chalk.gray("Previous chat history:"));
-		// eslint-disable-next-line no-console
 		console.log(history);
 	}
 
 	const memorySummary = await memory.loadSummary();
 
-	const messages: ChatMessage[] = [];
+	const messages: CompletionMessage[] = [];
 	if (memorySummary.trim()) {
 		messages.push({
 			role: "system",
@@ -82,7 +83,6 @@ export async function runChatSession(): Promise<void> {
 		});
 	}
 
-	// eslint-disable-next-line no-console
 	console.log(
 		chalk.cyan(
 			"Enter chat mode. Type /exit to quit, /summarize to summarize current session, /clear to clear all history and memory.",
@@ -93,21 +93,17 @@ export async function runChatSession(): Promise<void> {
 	const sessionLines: string[] = [];
 
 	try {
-		// eslint-disable-next-line no-constant-condition
 		while (true) {
-			// eslint-disable-next-line no-await-in-loop
 			const input = (await askLine(rl, chalk.green("> "))).trim();
 
 			if (input === "") continue;
 
 			if (input === "/clear") {
-				// eslint-disable-next-line no-console
 				console.log(
 					chalk.yellow(
 						"此操作将删除所有历史对话与长期记忆（chat.md 与 memory.md），且不可恢复。",
 					),
 				);
-				// eslint-disable-next-line no-await-in-loop
 				const confirm = await askLine(
 					rl,
 					chalk.yellow(
@@ -121,10 +117,8 @@ export async function runChatSession(): Promise<void> {
 					await clearSessionData(storage);
 					sessionLines.length = 0;
 					messages.length = 0;
-					// eslint-disable-next-line no-console
 					console.log(chalk.cyan("已清空历史与记忆，当前对话从零开始。"));
 				} else {
-					// eslint-disable-next-line no-console
 					console.log(chalk.gray("已取消清空操作。"));
 				}
 				continue;
@@ -132,10 +126,8 @@ export async function runChatSession(): Promise<void> {
 
 			if (input === "/exit") {
 				if (sessionLines.length > 0) {
-					// eslint-disable-next-line no-console
 					console.log(chalk.cyan("Exiting and saving memory..."));
 				} else {
-					// eslint-disable-next-line no-console
 					console.log(chalk.cyan("Exiting."));
 				}
 				break;
@@ -143,13 +135,10 @@ export async function runChatSession(): Promise<void> {
 
 			if (input === "/summarize") {
 				const sessionText = sessionLines.join("\n");
-				// eslint-disable-next-line no-await-in-loop
 				const summary = await llm.summarize(sessionText);
 				const now = new Date().toISOString();
 				const block = `\n### Session Summary (${now})\n\n${summary}\n`;
-				// eslint-disable-next-line no-await-in-loop
 				await storage.appendText(storage.paths.chatMd, block);
-				// eslint-disable-next-line no-console
 				console.log(chalk.magenta(summary));
 				continue;
 			}
@@ -169,7 +158,9 @@ export async function runChatSession(): Promise<void> {
 				process.stdout.write(`\r${chalk.gray(`Thinking ${frame}`)}`);
 			}, 80);
 
+			let replyWasStreamed = false;
 			const onChunk = (chunk: string) => {
+				replyWasStreamed = true;
 				if (spinnerActive) {
 					spinnerActive = false;
 					if (spinnerInterval) {
@@ -182,16 +173,81 @@ export async function runChatSession(): Promise<void> {
 			};
 
 			let reply: string;
+			let lastToolOutput: string | null = null;
 			try {
-				// eslint-disable-next-line no-await-in-loop
-				reply = await llm.generateReply(messages, onChunk);
+				let result = await llm.generateReplyWithTools(messages, onChunk);
+				let rounds = 0;
+				while (result.toolCalls.length > 0 && rounds < MAX_TOOL_ROUNDS) {
+					if (spinnerActive && spinnerInterval) {
+						spinnerActive = false;
+						clearInterval(spinnerInterval);
+						spinnerInterval = null;
+						process.stdout.write(`\r${" ".repeat(16)}\r\n`);
+						console.log(chalk.gray("正在执行命令…"));
+					}
+					messages.push({
+						role: "assistant",
+						content: result.content,
+						tool_calls: result.toolCalls,
+					});
+					for (const tc of result.toolCalls) {
+						if (tc.name !== "run_shell") continue;
+						let args: { command?: string };
+						try {
+							args = JSON.parse(tc.arguments) as {
+								command?: string;
+							};
+						} catch {
+							messages.push({
+								role: "tool",
+								content: "Invalid arguments",
+								tool_call_id: tc.id,
+							});
+							continue;
+						}
+						const cmd = typeof args.command === "string" ? args.command : "";
+						if (cmd.trim() === "") {
+							messages.push({
+								role: "tool",
+								content:
+									"命令为空或参数无效。请勿再次调用 run_shell，直接使用文字回答用户（例如说明无法执行命令或根据已有信息回答即可）。",
+								tool_call_id: tc.id,
+							});
+							continue;
+						}
+						console.log(chalk.gray(`执行命令: ${cmd}`));
+						const execResult = await runCommand(cmd);
+						const toolOutput =
+							execResult.code !== null
+								? `exit ${execResult.code}\n${execResult.stdout}${execResult.stderr ? `\nstderr:\n${execResult.stderr}` : ""}`
+								: execResult.stderr;
+						lastToolOutput = toolOutput;
+						messages.push({
+							role: "tool",
+							content: toolOutput,
+							tool_call_id: tc.id,
+						});
+					}
+					rounds += 1;
+					result = await llm.generateReplyWithTools(messages, onChunk);
+				}
+				reply = result.content.trim();
+				if (reply === "" && lastToolOutput !== null) {
+					const snippet =
+						lastToolOutput.length > 400
+							? `${lastToolOutput.slice(0, 400)}\n...`
+							: lastToolOutput;
+					reply = `命令已执行。模型未返回总结，原始输出：\n\n${snippet}`;
+				}
+				if (reply === "") {
+					reply = "（模型未返回内容）";
+				}
 			} catch (err) {
 				if (spinnerActive && spinnerInterval) {
 					clearInterval(spinnerInterval);
 					process.stdout.write(`\r${" ".repeat(16)}\r\n`);
 				}
-				const msg = err instanceof Error ? err.message : String(err);
-				// eslint-disable-next-line no-console
+				const msg = toErrorMessage(err);
 				console.error(chalk.red(`请求失败: ${msg}，请稍后重试。`));
 				sessionLines.pop();
 				messages.pop();
@@ -200,19 +256,23 @@ export async function runChatSession(): Promise<void> {
 				if (spinnerInterval) clearInterval(spinnerInterval);
 				spinnerActive = false;
 			}
+			if (!replyWasStreamed) {
+				// 工具调用后的最终回复未走流式，需在此输出并与「执行命令」分隔开
+				process.stdout.write("\n");
+				process.stdout.write(chalk.blue(reply));
+				process.stdout.write("\n");
+			}
 			process.stdout.write("\n");
 			sessionLines.push(`Assistant: ${reply}`);
 			messages.push({ role: "assistant", content: reply });
 
 			const now = new Date().toISOString();
 			const block = `\n## Turn at ${now}\n\n**User**: ${input}\n\n**Assistant**: ${reply}\n`;
-			// eslint-disable-next-line no-await-in-loop
 			await storage.appendText(storage.paths.chatMd, block);
 		}
 
 		const sessionText = sessionLines.join("\n");
 		if (sessionText.trim()) {
-			// eslint-disable-next-line no-console
 			console.log(chalk.cyan("Saving session to memory..."));
 			await memory.summarizeSessionAndSave(sessionText);
 		}

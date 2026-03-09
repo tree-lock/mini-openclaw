@@ -1,4 +1,9 @@
-import type { ChatMessage, LlmClient } from "./types";
+import type {
+	ChatMessage,
+	CompletionMessage,
+	GenerateReplyWithToolsResult,
+	LlmClient,
+} from "./types";
 
 export class FakeLlm implements LlmClient {
 	async generateReply(
@@ -7,6 +12,15 @@ export class FakeLlm implements LlmClient {
 	): Promise<string> {
 		const lastUser = [...messages].reverse().find((m) => m.role === "user");
 		return lastUser ? `echo: ${lastUser.content}` : "echo: <no-input>";
+	}
+
+	async generateReplyWithTools(
+		messages: CompletionMessage[],
+		_onChunk?: (chunk: string) => void,
+	): Promise<GenerateReplyWithToolsResult> {
+		const lastUser = [...messages].reverse().find((m) => m.role === "user");
+		const content = lastUser ? `echo: ${lastUser.content}` : "echo: <no-input>";
+		return { content, toolCalls: [] };
 	}
 
 	async summarize(text: string): Promise<string> {
