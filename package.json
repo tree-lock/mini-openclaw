@@ -1,0 +1,32 @@
+{
+	"name": "mini-openclaw",
+	"module": "index.ts",
+	"type": "module",
+	"private": true,
+	"bin": {
+		"tclaw": "index.ts"
+	},
+	"scripts": {
+		"dev": "bun run index.ts",
+		"start": "bun run index.ts",
+		"test": "bun test",
+		"typecheck": "tsc -p tsconfig.json",
+		"lint": "biome check .",
+		"lint:fix": "biome check --write .",
+		"format": "biome format --write .",
+		"format:check": "biome format ."
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.4.6",
+		"@types/bun": "latest"
+	},
+	"peerDependencies": {
+		"typescript": "^5"
+	},
+	"dependencies": {
+		"@clack/prompts": "^1.1.0",
+		"chalk": "^5.6.2",
+		"commander": "^14.0.3",
+		"openai": "^6.27.0"
+	}
+}

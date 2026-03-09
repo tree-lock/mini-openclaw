@@ -1,0 +1,60 @@
+---
+description: mini-openclaw 项目级约束与交付标准
+alwaysApply: true
+---
+
+# mini-openclaw（项目级规则）
+
+## 目标
+
+- 构建 [openclaw](https://github.com/openclaw/openclaw) 的最小实践：通过 CLI 完成配置与本地对话。
+- **P0 范围**：仅实现 CLI 配置与本地对话；Telegram 真实对话、定时任务与 MCP 的具体实现属后续迭代。
+- 默认以「可运行、可测试、可扩展」为实现优先级。
+
+## 核心功能（必须实现）
+
+1. **配置**
+   - `tclaw config`：进入配置，通过单选选择要配置的项（TELEGRAM BOT / OPENAI），每次交互输入一项配置值。
+   - `tclaw config list`：列出当前所有配置项 key 及脱敏后的值。
+2. **对话**
+   - `tclaw chat`：进入对话界面，用户可输入对话内容。
+   - 对话内命令：`/exit` 退出对话；`/summarize` 总结当前对话内容并保存到日志。
+   - 退出对话后自动总结并写入 `~/.tclaw/memory.md`。
+   - 再次进入对话时读取 `~/.tclaw/chat.md` 展示历史；上下文中仅加载 `~/.tclaw/memory.md` 的记忆摘要，完整历史仍存于 chat.md。
+3. **存储**
+   - 用户数据根目录为 `~/.tclaw`；首次使用时自动创建该目录及约定文件。
+   - 约定文件：`config.json`（用户配置）、`chat.md`（历史对话）、`memory.md`（记忆摘要）、`skill.md`（agent skill）、`personality.md`（agent 人格）。
+
+## 技术与架构要求
+
+- **命令格式**：所有命令形式为 `tclaw <command>`（如 config、config list、chat）。
+- **架构分层**：CLI 层（commander 解析）→ 配置模块、对话模块、记忆模块、存储层、LLM 适配；模块边界清晰，便于维护与测试。
+- **技术栈**：Bun 运行时、TypeScript、Biome 代码质量与格式化。与项目内 use-bun 规则一致：使用 `bun`、`bun test`、`bun run`，不引入 Node/npm/pnpm/vite 等替代方案。
+- **生产依赖**：commander（CLI 子命令）、@clack/prompts（交互式配置）、chalk（终端着色）、openai（OpenAI API）。Bun 已提供的能力不重复安装（如 dotenv、fetch、fs、readline），不安装 dotenv、undici、inquirer 等。
+- **推荐目录结构**：`src/cli.ts`、`src/commands/config.ts`、`src/commands/chat.ts`，以及 `config/`、`chat/`、`memory/`、`storage/`、`llm/` 等模块目录，与架构文档 §7 一致。
+
+## 质量与工程要求（必须满足）
+
+- 模块边界清晰（cli / config / chat / memory / storage / llm），与架构文档一致。
+- 可运行：通过 `bun run index.ts` 或 `tclaw` 命令入口启动。
+- 应为配置加载、对话链路、存储读写等核心逻辑提供单元测试（使用 `bun test`）。
+- 保持与 `docs/设计文档.md`、`docs/架构文档.md`、`docs/依赖文档.md` 一致；任何改动不得破坏上述文档所描述的行为与约定。
+
+## 加分项（条件允许时实现）
+
+- 定时任务：用户通过对话设定定时任务。
+- MCP 调用：用户通过对话调用 MCP。
+- 真实 Telegram 对话：在配置 TELEGRAM_BOT_TOKEN 基础上实现真实 Telegram Bot 对话。
+
+## 实现优先级指引
+
+1. 先保证主链路可跑通：config → 写入 config.json → chat → 调用 LLM → 写 chat.md / memory.md。
+2. 再完善 config list 脱敏、/summarize、进入 chat 时加载 memory 摘要。
+3. 最后扩展 Telegram、MCP、定时任务等后续迭代能力。
+
+## 执行约束
+
+- 新增功能时必须说明其对应的需求条目（P0 核心功能 / 后续迭代 / 加分项）。
+- 任何改动不得破坏「可运行 + 与架构/设计/依赖文档一致」的基础交付。
+- 安装依赖时使用 Bun（`bun add`），优先使用较新版本（当前为 2026 年 3 月），尽量不采用过旧的方案。
+- 更新的时候优先更新文档，再更新代码。
