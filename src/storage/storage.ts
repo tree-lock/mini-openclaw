@@ -40,6 +40,8 @@ export class Storage {
 	async ensureInitialized(): Promise<void> {
 		await mkdir(this.baseDir, { recursive: true });
 
+		await mkdir(this.paths.skillsDir, { recursive: true });
+
 		await Promise.all([
 			this.ensureJsonFile(this.paths.configJson, {}),
 			this.ensureTextFile(this.paths.chatMd, ""),

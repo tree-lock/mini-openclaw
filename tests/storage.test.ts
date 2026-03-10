@@ -17,6 +17,7 @@ test("Storage.ensureInitialized creates required files", async () => {
 		expect(await storage.exists(storage.paths.memoryMd)).toBe(true);
 		expect(await storage.exists(storage.paths.skillMd)).toBe(true);
 		expect(await storage.exists(storage.paths.personalityMd)).toBe(true);
+		expect(await storage.exists(storage.paths.skillsDir)).toBe(true);
 
 		const cfg = await storage.readJson<Record<string, unknown>>(
 			storage.paths.configJson,

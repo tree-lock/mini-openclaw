@@ -9,6 +9,7 @@ import { OpenAiLlm } from "../llm/openaiAdapter";
 import type { CompletionMessage } from "../llm/types";
 import { MemoryService } from "../memory/memoryService";
 import { PersonalityService } from "../personality/personalityService";
+import { SkillService } from "../skill/skillService";
 import { Storage } from "../storage/storage";
 import { toErrorMessage } from "../utils/errorMessage";
 
@@ -17,6 +18,7 @@ const MAX_TOOL_ROUNDS = 3;
 export function buildBootstrapSystemMessages(opts: {
 	memorySummary: string;
 	personalityMd: string;
+	skillsPrompt?: string;
 }): CompletionMessage[] {
 	const blocks: string[] = [];
 	if (opts.memorySummary.trim()) {
@@ -28,6 +30,9 @@ export function buildBootstrapSystemMessages(opts: {
 		blocks.push(
 			`## Personality\n以下是 assistant 的人格与行为约束（来自 personality.md）。请在后续对话中遵循：\n\n${opts.personalityMd.trim()}`,
 		);
+	}
+	if (opts.skillsPrompt && opts.skillsPrompt.trim()) {
+		blocks.push(opts.skillsPrompt.trim());
 	}
 	if (blocks.length === 0) return [];
 	return [{ role: "system", content: blocks.join("\n\n---\n\n") }];
@@ -87,6 +92,7 @@ export async function runChatSession(): Promise<void> {
 	});
 	const memory = new MemoryService(storage, llm);
 	const personality = new PersonalityService(storage);
+	const skills = new SkillService(storage);
 
 	const history = await storage.readText(storage.paths.chatMd);
 	if (history.trim()) {
@@ -96,10 +102,12 @@ export async function runChatSession(): Promise<void> {
 
 	const memorySummary = await memory.loadSummary();
 	const personalityMd = await personality.load();
+	const skillsPrompt = await skills.loadAndBuildPrompt();
 
 	const messages: CompletionMessage[] = buildBootstrapSystemMessages({
 		memorySummary,
 		personalityMd,
+		skillsPrompt,
 	});
 
 	console.log(
@@ -138,10 +146,12 @@ export async function runChatSession(): Promise<void> {
 					messages.length = 0;
 					const newMemorySummary = "";
 					const newPersonalityMd = await personality.load();
+					const newSkillsPrompt = await skills.loadAndBuildPrompt();
 					messages.push(
 						...buildBootstrapSystemMessages({
 							memorySummary: newMemorySummary,
 							personalityMd: newPersonalityMd,
+							skillsPrompt: newSkillsPrompt,
 						}),
 					);
 					console.log(chalk.cyan("已清空历史与记忆，当前对话从零开始。"));

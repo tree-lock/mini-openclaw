@@ -9,6 +9,7 @@ export type TclawPaths = Readonly<{
 	chatMd: string;
 	memoryMd: string;
 	skillMd: string;
+	skillsDir: string;
 	personalityMd: string;
 }>;
 
@@ -23,6 +24,7 @@ export function getTclawPaths(baseDir: string): TclawPaths {
 		chatMd: path.join(baseDir, "chat.md"),
 		memoryMd: path.join(baseDir, "memory.md"),
 		skillMd: path.join(baseDir, "skill.md"),
+		skillsDir: path.join(baseDir, "skills"),
 		personalityMd: path.join(baseDir, "personality.md"),
 	};
 }
