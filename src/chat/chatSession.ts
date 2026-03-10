@@ -8,10 +8,30 @@ import { CONFIG_KEYS } from "../config/schema";
 import { OpenAiLlm } from "../llm/openaiAdapter";
 import type { CompletionMessage } from "../llm/types";
 import { MemoryService } from "../memory/memoryService";
+import { PersonalityService } from "../personality/personalityService";
 import { Storage } from "../storage/storage";
 import { toErrorMessage } from "../utils/errorMessage";
 
 const MAX_TOOL_ROUNDS = 3;
+
+export function buildBootstrapSystemMessages(opts: {
+	memorySummary: string;
+	personalityMd: string;
+}): CompletionMessage[] {
+	const blocks: string[] = [];
+	if (opts.memorySummary.trim()) {
+		blocks.push(
+			`## Memory\n以下是你与用户以往对话的记忆摘要，请在后续对话中参考：\n\n${opts.memorySummary.trim()}`,
+		);
+	}
+	if (opts.personalityMd.trim()) {
+		blocks.push(
+			`## Personality\n以下是 assistant 的人格与行为约束（来自 personality.md）。请在后续对话中遵循：\n\n${opts.personalityMd.trim()}`,
+		);
+	}
+	if (blocks.length === 0) return [];
+	return [{ role: "system", content: blocks.join("\n\n---\n\n") }];
+}
 
 /**
  * Clears chat history and long-term memory files. Used by /clear and tests.
@@ -66,6 +86,7 @@ export async function runChatSession(): Promise<void> {
 		}),
 	});
 	const memory = new MemoryService(storage, llm);
+	const personality = new PersonalityService(storage);
 
 	const history = await storage.readText(storage.paths.chatMd);
 	if (history.trim()) {
@@ -74,14 +95,12 @@ export async function runChatSession(): Promise<void> {
 	}
 
 	const memorySummary = await memory.loadSummary();
+	const personalityMd = await personality.load();
 
-	const messages: CompletionMessage[] = [];
-	if (memorySummary.trim()) {
-		messages.push({
-			role: "system",
-			content: `以下是你与用户以往对话的记忆摘要，请在后续对话中参考：\n\n${memorySummary}`,
-		});
-	}
+	const messages: CompletionMessage[] = buildBootstrapSystemMessages({
+		memorySummary,
+		personalityMd,
+	});
 
 	console.log(
 		chalk.cyan(
@@ -117,6 +136,14 @@ export async function runChatSession(): Promise<void> {
 					await clearSessionData(storage);
 					sessionLines.length = 0;
 					messages.length = 0;
+					const newMemorySummary = "";
+					const newPersonalityMd = await personality.load();
+					messages.push(
+						...buildBootstrapSystemMessages({
+							memorySummary: newMemorySummary,
+							personalityMd: newPersonalityMd,
+						}),
+					);
 					console.log(chalk.cyan("已清空历史与记忆，当前对话从零开始。"));
 				} else {
 					console.log(chalk.gray("已取消清空操作。"));

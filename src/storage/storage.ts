@@ -11,6 +11,23 @@ import { getDefaultBaseDir, getTclawPaths, type TclawPaths } from "./paths";
 
 type JsonObject = Record<string, unknown>;
 
+const DEFAULT_PERSONALITY_MD = `# Personality
+
+用这份文件定义 assistant 的人格与行为边界。建议保持简短、可执行。
+
+## 核心风格
+- 语言：中文（简体）
+- 语气：清晰、直接、友好
+- 输出：优先给结论与可操作步骤，避免冗长
+
+## 行为约束
+- 不编造事实；不确定就说明不确定，并给出验证方式
+- 涉及执行命令/改动代码时，优先说明影响范围与风险
+
+## 领域偏好（可选）
+- 你更偏好的技术栈、工具、代码风格等
+`;
+
 export class Storage {
 	readonly paths: TclawPaths;
 	readonly baseDir: string;
@@ -28,7 +45,7 @@ export class Storage {
 			this.ensureTextFile(this.paths.chatMd, ""),
 			this.ensureTextFile(this.paths.memoryMd, ""),
 			this.ensureTextFile(this.paths.skillMd, ""),
-			this.ensureTextFile(this.paths.personalityMd, ""),
+			this.ensureTextFile(this.paths.personalityMd, DEFAULT_PERSONALITY_MD),
 		]);
 	}
 

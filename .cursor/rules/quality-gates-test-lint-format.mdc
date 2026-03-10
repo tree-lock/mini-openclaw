@@ -5,7 +5,7 @@ alwaysApply: true
 
 # 质量门禁：test + lint + format
 
-当你认为“代码已经构建/实现完成，准备交付结果”时，在结束本次工作前必须完成以下检查（以 `package.json` 脚本为准）：
+当你认为“代码已经构建/实现完成，准备交付结果”或"git commit"之前，必须完成以下检查（以 `package.json` 脚本为准）：
 
 - **测试**：`bun test`
 - **Lint**：`bun run lint`
@@ -15,4 +15,3 @@ alwaysApply: true
 
 - **自动修复（优先）**：`bun run format`，然后 `bun run lint:fix`
 - **再检查**：`bun test` + `bun run lint` + `bun run format:check`
-

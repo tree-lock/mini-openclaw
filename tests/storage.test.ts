@@ -22,6 +22,9 @@ test("Storage.ensureInitialized creates required files", async () => {
 			storage.paths.configJson,
 		);
 		expect(cfg).toEqual({});
+
+		const personality = await storage.readText(storage.paths.personalityMd);
+		expect(personality).toContain("# Personality");
 	} finally {
 		await rm(base, { recursive: true, force: true });
 	}
